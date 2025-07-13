@@ -37,6 +37,9 @@ V5Core::SimpleAsync::CreateTask(task, callback, 5);
 
 // 4. In your main loop:
 V5Core::SimpleAsync::Update();  // executes any completed task callbacks
+
+// 5. Optionally block for a specific task and invoke its callback immediately
+V5Core::SimpleAsync::ForceWait(taskId);
 ```
 
 ---
@@ -71,7 +74,7 @@ $ ./blur_demo input.png
 1. Drop `SimpleAsync.h` and `ThreadPool.h` into your project.
 2. Call `SimpleAsync::CreateTask(...)` to launch tasks.
 3. Call `SimpleAsync::Update()` each frame or tick (main thread).
-4. No `Initialize()` or `Destroy()` required.
+4. Call `Destroy()` on quit.
 
 ---
 
