@@ -33,13 +33,13 @@ std::function<void(int)> callback = [](int result) {
 };
 
 // 3. Schedule task
-V5Core::SimpleAsync::CreateTask(task, callback, 5);
+SimpleAsync::CreateTask(task, callback, 5);
 
 // 4. In your main loop:
-V5Core::SimpleAsync::Update();  // executes any completed task callbacks
+SimpleAsync::Update();  // executes any completed task callbacks
 
 // 5. Optionally block for a specific task and invoke its callback immediately
-V5Core::SimpleAsync::ForceWait(taskId);
+SimpleAsync::ForceWait(taskId);
 ```
 
 ---
