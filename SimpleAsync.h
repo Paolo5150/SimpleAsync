@@ -94,7 +94,7 @@ namespace V5Core
 		[[nodiscard]] static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
 		{
 			using ReturnType = std::invoke_result_t<Func, Args...>;
-			auto f = m_threadPool->EnqueueTask(std::forward<Func>(task), std::forward<Args>(args)...);
+			auto f = m_threadPool.EnqueueTask(std::forward<Func>(task), std::forward<Args>(args)...);
 			auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(m_id, std::move(f), std::forward<Callback>(callback));
 
 			std::lock_guard<std::mutex> lock(m_tasksMutex);
@@ -125,23 +125,16 @@ namespace V5Core
 				}
 			}
 		}
-
-		static void Initialize()
-		{
-			m_threadPool = std::make_unique<ThreadPool>();
-		}
-
 		static void Destroy()
 		{
 			std::lock_guard<std::mutex> lock(m_tasksMutex);
 			m_tasks.clear();
-			m_threadPool.reset();
 		}
 
 	private:
 		inline static std::unordered_map<uint32_t, std::unique_ptr<AsyncTaskWrapper>> m_tasks;
 		inline static std::mutex m_tasksMutex;
 		inline static uint32_t m_id = 0;
-		inline static std::unique_ptr<ThreadPool> m_threadPool;
+		inline static ThreadPool m_threadPool;
 	};
 }
