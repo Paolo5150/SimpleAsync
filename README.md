@@ -1,0 +1,101 @@
+# SimpleAsync
+
+🚀 **SimpleAsync** is a lightweight, header-only C++ task library for running background work on a thread pool, with results safely delivered back on the **main thread via callbacks**.
+
+Ideal for:
+- Game engines
+- UI frameworks
+- Any system where background work needs to be **synced back** to the main loop.
+
+---
+
+## ✨ Highlights
+
+- ✅ **Header-only**: Just include and use. No build steps, no setup.
+- 🧵 **Runs tasks on a thread pool**.
+- 🧠 **Callback runs on the main thread** — perfect for updating game state, UI, etc.
+- 🔧 **No init/shutdown calls** needed — just use `CreateTask()` and `Update()`.
+- 🧩 **Easy to extend** with cancellation, priorities, etc.
+
+---
+
+## 🔧 How It Works
+
+```cpp
+// 1. Your async task (can return any type)
+std::function<int(int)> task = [](int x) {
+    return x * x;
+};
+
+// 2. Callback invoked when task completes (on main thread)
+std::function<void(int)> callback = [](int result) {
+    std::cout << "Result: " << result << std::endl;
+};
+
+// 3. Schedule task
+V5Core::SimpleAsync::CreateTask(task, callback, 5);
+
+// 4. In your main loop:
+V5Core::SimpleAsync::Update();  // executes any completed task callbacks
+```
+
+---
+
+## 🧪 Included Demo: Parallel Image Blur
+
+This repo includes a full multithreaded image blur demo using `SimpleAsync`.
+
+### How it works:
+- Loads an image (`stb_image`)
+- Splits it into tiles
+- Applies blur to each tile **in parallel**
+- Recombines and saves the final result (`stb_image_write`)
+
+### Toggle async vs single-threaded:
+
+```cpp
+#define USE_ASYNC  // Comment this out to run in single-threaded mode
+```
+
+### Example output:
+
+```bash
+$ ./blur_demo input.png
+✓ Parallel processing completed! Image saved as output_blur_parallel.png
+```
+
+---
+
+## 🛠️ Integration
+
+1. Drop `SimpleAsync.h` and `ThreadPool.h` into your project.
+2. Call `SimpleAsync::CreateTask(...)` to launch tasks.
+3. Call `SimpleAsync::Update()` each frame or tick (main thread).
+4. No `Initialize()` or `Destroy()` required.
+
+---
+
+## 🧱 Designed to Be Extended
+
+Future extensions could include:
+
+- ⛔ Task cancellation
+- ⏳ Timeouts
+- 🔄 Chained tasks (`then()`)
+- 📊 Prioritization
+
+Pull requests are welcome!
+
+---
+
+## 📜 License
+
+MIT License.
+
+Includes:
+- [stb_image.h](https://github.com/nothings/stb)
+- [stb_image_write.h](https://github.com/nothings/stb)
+
+These are public domain or MIT licensed.
+
+---
