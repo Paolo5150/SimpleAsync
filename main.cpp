@@ -241,7 +241,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef USE_ASYNC
             // Create blur task
-            std::function<ImageTile(ImageTile)> blurTask = [](ImageTile input) -> ImageTile {
+            auto blurTask = [](CancellationToken token, ImageTile input) -> ImageTile {
                 return ApplyBlurToTile(input, originalImage);
                 };
 
