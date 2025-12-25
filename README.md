@@ -14,21 +14,20 @@ Ideal for:
 - ✅ **Header-only**: Just include and use. No build steps, no setup.
 - 🧵 **Runs tasks on a thread pool**.
 - 🧠 **Callback runs on the main thread** — perfect for updating game state, UI, etc.
-- 🔧 **No init/shutdown calls** needed — just use `CreateTask()` and `Update()`.
-- 🧩 **Easy to extend** with cancellation, priorities, etc.
+- 🧩 **Easy to extend** with timeouts, priorities, etc.
 
 ---
 
 ## 🔧 How It Works
 
 ```cpp
-// 1. Your async task (can return any type)
-std::function<int(int)> task = [](int x) {
+// 1. Your async task (can return any type). First argument(or only mandatory argument) is always the cancellation token, can be used to interrupt the task if cancellation is requested.
+auto task = [](CancellationToken token, int x) {
     return x * x;
 };
 
-// 2. Callback invoked when task completes (on main thread)
-std::function<void(int)> callback = [](int result) {
+// 2. Callback invoked when task completes (on main thread). Argument is the returned type from the task
+auto callback = [](int result) {
     std::cout << "Result: " << result << std::endl;
 };
 
@@ -74,7 +73,8 @@ $ ./blur_demo input.png
 1. Drop `SimpleAsync.h` and `ThreadPool.h` into your project.
 2. Call `SimpleAsync::CreateTask(...)` to launch tasks.
 3. Call `SimpleAsync::Update()` each frame or tick (main thread).
-4. Call `Destroy()` on quit.
+4. Call `SimpleAsync::Cancel(id)` to request cancellation of a task. Task itself will need to deal with how to interrupt the running task.
+5. Call `Destroy()` on quit.
 
 ---
 
@@ -82,7 +82,6 @@ $ ./blur_demo input.png
 
 Future extensions could include:
 
-- ⛔ Task cancellation
 - ⏳ Timeouts
 - 🔄 Chained tasks (`then()`)
 - 📊 Prioritization
