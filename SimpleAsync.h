@@ -15,6 +15,13 @@ public:
 	virtual uint32_t GetId() const = 0;
 };
 
+struct CancellationState
+{
+	std::atomic<bool> Canceled{ false };
+};
+
+using CancellationToken = std::shared_ptr<CancellationState>;
+
 template<class T>
 class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper {
 public:
@@ -32,8 +39,8 @@ public:
 		if (Task.valid() && !CallbackInvoked) {
 			try {
 				Task.wait();
-				T result = Task.get();
-				if (Callback) Callback(result);
+				T&& result = Task.get();
+				if (Callback) Callback(std::move(result));
 			}
 			catch (...) {
 				// Optionally log error
@@ -49,8 +56,8 @@ public:
 				try {
 					if (!CallbackInvoked) {
 						CallbackInvoked = true;
-						T result = Task.get();
-						if (Callback) Callback(result);
+						T&& result = Task.get();
+						if (Callback) Callback(std::move(result));
 					}
 					return true;
 				}
@@ -65,39 +72,36 @@ public:
 	}
 };
 
-/**
- * A lightweight asynchronous task manager.
- *
- * Allows scheduling tasks to run in a separate thread, and specifies a callback to be invoked
- * on the main thread. Meant to be driven by `SimpleAsync::Update()` on the main thread.
- *
- * Example usage:
- *
- * 1. Define the async task:
- *    std::function<MeshData(uint32_t, uint32_t, std::function<void(...)>)> task = ...;
- *
- * 2. Define the callback:
- *    std::function<void(MeshData)> callback = ...;
- *
- * 3. (Optional) Pass function arguments:
- *    std::function<void(...args...)> heightFunc = ...;
- *
- * 4. Create the task:
- *    SimpleAsync::CreateTask(task, callback, 100, 100, std::move(heightFunc));
- */
 class SimpleAsync
 {
 public:
 	template<typename Func, typename Callback, typename... Args>
-	[[nodiscard]] static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
+	static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
 	{
-		using ReturnType = std::invoke_result_t<Func, Args...>;
-		auto f = m_threadPool.EnqueueTask(std::forward<Func>(task), std::forward<Args>(args)...);
-		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(m_id, std::move(f), std::forward<Callback>(callback));
+		uint32_t id = m_id++;
 
-		std::lock_guard<std::mutex> lock(m_tasksMutex);
-		m_tasks[m_id] = std::move(asyncTask);
-		return m_id++;
+		auto token = std::make_shared<CancellationState>();
+
+		auto boundTask = [t = std::forward<Func>(task), token, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable -> decltype(auto)
+			{
+				auto callWithArgs = [&](auto&&... unpackedArgs) -> decltype(auto) {
+					return t(token, std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+					};
+
+				return std::apply(callWithArgs, std::move(argsTuple));
+			};
+
+		auto future = m_threadPool.EnqueueTask(std::move(boundTask));
+
+		using ReturnType = decltype(task(token, std::forward<Args>(args)...));
+
+		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(
+			id, std::move(future), std::forward<Callback>(callback));
+
+		m_tasks[id] = std::move(asyncTask);
+		m_cancellations[id] = token;
+
+		return id;
 	}
 
 	static void ForceWait(uint32_t id)
@@ -107,6 +111,7 @@ public:
 		if (it != m_tasks.end()) {
 			it->second->ForceWait();
 			m_tasks.erase(it);
+			m_cancellations.erase(it->second->GetId());
 		}
 	}
 
@@ -123,6 +128,21 @@ public:
 			}
 		}
 	}
+
+	static CancellationToken GetCancellationToken(uint32_t id)
+	{
+		return m_cancellations[id];
+	}
+
+	static void Cancel(uint32_t id)
+	{
+		auto it = m_tasks.find(id);
+		if (it != m_tasks.end())
+		{
+			m_cancellations[id]->Canceled.store(true);
+		}
+	}
+
 	static void Destroy()
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
@@ -131,6 +151,7 @@ public:
 
 private:
 	inline static std::unordered_map<uint32_t, std::unique_ptr<AsyncTaskWrapper>> m_tasks;
+	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
 	inline static std::mutex m_tasksMutex;
 	inline static uint32_t m_id = 0;
 	inline static ThreadPool m_threadPool;
