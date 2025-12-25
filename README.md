@@ -39,6 +39,9 @@ SimpleAsync::Update();  // executes any completed task callbacks
 
 // 5. Optionally block for a specific task and invoke its callback immediately
 SimpleAsync::ForceWait(taskId);
+
+// 6. Optionally request cancellation of a task. Callback will still be invoked.
+SimpleAsync::Cancel(taskId);
 ```
 
 ---
