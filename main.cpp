@@ -190,12 +190,12 @@ int main(int argc, char* argv[]) {
     }
 
 #ifdef USE_ASYNC
-    V5Core::SimpleAsync::Initialize();
+     SimpleAsync::Initialize(6);
 #endif
 
     if (!originalImage.Load(argv[1])) {
 #ifdef USE_ASYNC
-        V5Core::SimpleAsync::Destroy();
+        SimpleAsync::Destroy();
 #endif
         return 1;
     }
@@ -242,7 +242,7 @@ int main(int argc, char* argv[]) {
 #ifdef USE_ASYNC
             // Create blur task
             auto blurTask = [](CancellationToken token, ImageTile input) -> ImageTile {
-                return ApplyBlurToTile(input, originalImage);
+                    return ApplyBlurToTile(input, originalImage);
                 };
 
             std::function<void(ImageTile)> blurCallback = [tileId](ImageTile result) {
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
                 }
                 };
 
-            uint32_t taskId = V5Core::SimpleAsync::CreateTask(blurTask, blurCallback, tile);
+            uint32_t taskId = SimpleAsync::CreateTask(blurTask, blurCallback, tile);
 
             // Only print task creation for first few and last few to avoid spam
             if (tileId < 5 || tileId >= totalTasks - 5) {
@@ -282,7 +282,7 @@ int main(int argc, char* argv[]) {
 #ifdef USE_ASYNC
     // Wait for all tasks to complete
     while (completedTasks < totalTasks) {
-        V5Core::SimpleAsync::Update();
+        SimpleAsync::Update();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 #endif
@@ -352,7 +352,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef USE_ASYNC
-    V5Core::SimpleAsync::Destroy();
+    SimpleAsync::Destroy();
 #endif
     return 0;
 }

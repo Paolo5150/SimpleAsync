@@ -78,6 +78,10 @@ public:
 	template<typename Func, typename Callback, typename... Args>
 	static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
 	{
+		if (!m_initialized)
+		{
+			throw std::runtime_error("Initialize was never called!");
+		}
 		uint32_t id = m_id++;
 
 		auto token = std::make_shared<CancellationState>();
@@ -91,7 +95,7 @@ public:
 				return std::apply(callWithArgs, std::move(argsTuple));
 			};
 
-		auto future = m_threadPool.EnqueueTask(std::move(boundTask));
+		auto future = m_threadPool->EnqueueTask(std::move(boundTask));
 
 		using ReturnType = decltype(task(token, std::forward<Args>(args)...));
 
@@ -129,11 +133,6 @@ public:
 		}
 	}
 
-	static CancellationToken GetCancellationToken(uint32_t id)
-	{
-		return m_cancellations[id];
-	}
-
 	static void Cancel(uint32_t id)
 	{
 		auto it = m_tasks.find(id);
@@ -143,10 +142,17 @@ public:
 		}
 	}
 
+	static void Initialize(size_t maxThreads = std::thread::hardware_concurrency())
+	{
+		m_threadPool = std::make_unique<ThreadPool>(maxThreads);
+		m_initialized = true;
+	}
+
 	static void Destroy()
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		m_tasks.clear();
+		m_threadPool.reset();
 	}
 
 private:
@@ -154,5 +160,6 @@ private:
 	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
 	inline static std::mutex m_tasksMutex;
 	inline static uint32_t m_id = 0;
-	inline static ThreadPool m_threadPool;
+	inline static std::unique_ptr<ThreadPool> m_threadPool;
+	inline static bool m_initialized = false;
 };
