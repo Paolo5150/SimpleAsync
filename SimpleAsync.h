@@ -7,6 +7,10 @@
 #include <chrono>
 #include "ThreadPool.h"
 
+namespace {
+	const std::string DefaultPoolName = "DefaultPool";
+}
+
 class AsyncTaskWrapper {
 public:
 	virtual ~AsyncTaskWrapper() = default;
@@ -75,13 +79,28 @@ public:
 class SimpleAsync
 {
 public:
+	
 	template<typename Func, typename Callback, typename... Args>
-	static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
+	static uint32_t CreateTask(Func&& task,	Callback&& callback,Args&&... args)
+	{
+		return CreateTaskInPool(
+			m_defaultPoolName,
+			std::forward<Func>(task),
+			std::forward<Callback>(callback),
+			std::forward<Args>(args)...);
+	}
+
+	template<typename Func, typename Callback, typename... Args>
+	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Callback&& callback, Args&&... args)
 	{
 		if (!m_initialized)
 		{
 			throw std::runtime_error("Initialize was never called!");
 		}
+		auto pool = m_threadPools.find(poolName);
+		if(pool == m_threadPools.end())
+			throw std::runtime_error("Thread pool does not exist");
+
 		uint32_t id = m_id++;
 
 		auto token = std::make_shared<CancellationState>();
@@ -95,7 +114,7 @@ public:
 				return std::apply(callWithArgs, std::move(argsTuple));
 			};
 
-		auto future = m_threadPool->EnqueueTask(std::move(boundTask));
+		auto future = pool->second->EnqueueTask(std::move(boundTask));
 
 		using ReturnType = decltype(task(token, std::forward<Args>(args)...));
 
@@ -108,6 +127,7 @@ public:
 		return id;
 	}
 
+
 	static void ForceWait(uint32_t id)
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
@@ -115,7 +135,7 @@ public:
 		if (it != m_tasks.end()) {
 			it->second->ForceWait();
 			m_tasks.erase(it);
-			m_cancellations.erase(it->second->GetId());
+			m_cancellations.erase(id);
 		}
 	}
 
@@ -142,17 +162,43 @@ public:
 		}
 	}
 
-	static void Initialize(size_t maxThreads = std::thread::hardware_concurrency())
+	static void CreatePool(const std::string& poolName, size_t threadsCount)
 	{
-		m_threadPool = std::make_unique<ThreadPool>(maxThreads);
+		if (poolName.empty())
+			throw std::runtime_error("Pool name cannot be empty");
+
+		auto it = m_threadPools.find(poolName);
+		if(it != m_threadPools.end())
+			throw std::runtime_error("Pool name already exists");
+
+		m_threadPools[poolName] = std::make_unique<ThreadPool>(threadsCount);
+	}
+
+	static void Initialize(const std::string& defaultPoolName = DefaultPoolName, size_t maxThreads = std::thread::hardware_concurrency())
+	{
+		auto poolName = defaultPoolName;
+		if (poolName.empty())
+			poolName = DefaultPoolName;
+
+		m_defaultPoolName = poolName;
+		m_threadPools[m_defaultPoolName] = std::make_unique<ThreadPool>(maxThreads);
 		m_initialized = true;
+	}
+
+	static uint32_t GetAvailableThreads(const std::string& poolName)
+	{
+		auto it = m_threadPools.find(poolName);
+		if (it == m_threadPools.end())
+			throw std::runtime_error("Pool does not exists");
+
+		return it->second->GetAvailableThreads();
 	}
 
 	static void Destroy()
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		m_tasks.clear();
-		m_threadPool.reset();
+		m_threadPools.clear();
 	}
 
 private:
@@ -160,6 +206,7 @@ private:
 	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
 	inline static std::mutex m_tasksMutex;
 	inline static uint32_t m_id = 0;
-	inline static std::unique_ptr<ThreadPool> m_threadPool;
+	inline static std::unordered_map<std::string, std::unique_ptr<ThreadPool>> m_threadPools;
 	inline static bool m_initialized = false;
+	inline static std::string m_defaultPoolName;
 };

@@ -11,12 +11,11 @@
 class ThreadPool
 {
 public:
-	ThreadPool(size_t numOfThreads) : m_stop(false)
+	ThreadPool(size_t numOfThreads) : m_stop(false), m_totalThreads(numOfThreads)
 	{
 		for (size_t i = 0; i < numOfThreads; i++)
 		{
 			m_workers.emplace_back([this]() {
-
 				std::function<void()> task;
 				while (1)
 				{
@@ -38,8 +37,6 @@ public:
 					{
 					}
 					m_activeThreads.fetch_sub(1, std::memory_order_relaxed);
-
-
 				}
 				});
 		}
@@ -57,12 +54,16 @@ public:
 			if (w.joinable())
 				w.join();
 		}
-
 	}
 
 	uint32_t GetActiveThreadsCount() const
 	{
 		return m_activeThreads.load();
+	}
+
+	uint32_t GetAvailableThreads() const
+	{
+		return m_totalThreads - m_activeThreads.load();
 	}
 
 	template<typename Func, typename... Args>
@@ -86,14 +87,12 @@ public:
 		return res;
 	}
 
-
 private:
 	std::vector<std::thread> m_workers;
 	std::mutex m_mutex;
 	std::condition_variable m_condition;
 	std::queue<std::function<void()>> m_tasks;
 	std::atomic<uint32_t> m_activeThreads = 0;
+	uint32_t m_totalThreads;
 	bool m_stop;
 };
-
-	

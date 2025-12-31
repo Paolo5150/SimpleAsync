@@ -2,138 +2,90 @@
 
 🚀 **SimpleAsync** is a lightweight, header-only C++ task library for running background work on a thread pool, with results safely delivered back on the **main thread via callbacks**.
 
-Ideal for:
-
-- Game engines
-- UI frameworks
-- Any system where background work needs to be **synced back** to the main loop.
+Ideal for game engines, simulations, and any system requiring background work to sync back to a main loop.
 
 ---
 
-## ✨ Highlights
+## Highlights
 
-- ✅ **Header-only**: Just include and use. No build steps, no setup.
-- 🧵 **Runs tasks on a thread pool**.
-- 🧠 **Callback runs on the main thread** — perfect for updating game state, UI, etc.
-- 🧩 **Easy to extend** with timeouts, priorities, etc.
-
----
-
-## 📋 Requirements
-
-- **C++17** or higher
+* ✅ Header-only
+* 🧵 Multiple named thread pools
+* 🧠 Callbacks run on the main thread
+* ❌ Cooperative cancellation
+* 🧱 Sequential queues via single-thread pools
+* 📊 Demo with Built-in profiler support using [ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler) (Chrome tracing compatible)
 
 ---
 
-## 🔧 How It Works
+## Requirements
+
+* C++17 or higher
+
+---
+
+## Quick Example
 
 ```cpp
+SimpleAsync::Initialize("DefaultPool", 4);  // Initialize default pool with 4 threads
+SimpleAsync::CreatePool("LowPriorityQueue", 1); // Low-priority single-thread pool
 
-// 0. Initialize, pass in the number of threads to be created for the pool.
-SimpleAsync::Initialize(6);
-
-// 1. Your async task (can return any type). First argument(or only mandatory argument) is always the cancellation token, can be used to interrupt the task.
-auto task = [](CancellationToken token, int cycles) -> int {
-
-    //This will run on a separate thread
-    //Started an incredibly demanding task...
-    for(int i=0; i< cycles; i++>)
-    {
-        //Insanely advanced maths happening....
-        if(token->Canceled) return -1; //Do an early return if cancellation was requested
-    }
-    //More incredibly complicated calculations....
-    //At the end, return the data
-    return 25;
+auto task = [](CancellationToken token, int x, int y) -> int {
+    // This will run on a separate thread
+    int result = 0;
+    for (int i = 0; i < x; ++i)
+        for (int j = 0; j < y; ++j)
+            if (token->Canceled) return -1; // Early return if task was canceled
+            else result += i + j;
+    return result;
 };
 
-// 2. Callback invoked when task completes (on main thread). Argument is the returned type from the task
 auto callback = [](int result) {
-    //Invoked on main thread
-    //'result' should be 25...or -1, if cancellation was requested
-    std::cout << "Result: " << result << std::endl;
+    // Invoked on main thread
+    //'result' is whatever the task returned
+    std::cout << "Task finished with result: " << result << std::endl;
 };
 
-// 3. Schedule task. Returns the id, can be used to force wait, or cancel.
-auto taskId = SimpleAsync::CreateTask(task, callback, 5);
+uint32_t taskId = SimpleAsync::CreateTask(task, callback, 100, 100); // CreateTask will put task on default pool
+uint32_t othertaskId = SimpleAsync::CreateTaskInPool("LowPriorityQueue", task, callback, 100, 100); // CreateTaskInPool will put the task on the specified pool
 
-// 4. In your main loop, call every frame:
-SimpleAsync::Update();  // executes any completed task callbacks
-
-// 5. Optionally block for a specific task to complete.
+// Optionally block for a specific task to complete.
 SimpleAsync::ForceWait(taskId);
 
-// 6. Optionally request cancellation of a task. Callback will still be invoked.
+// Optionally request cancellation of a task. Callback will still be invoked.
 SimpleAsync::Cancel(taskId);
 
-// 7. Shutdown
+while (running) 
+{
+    SimpleAsync::Update(); // Executes completed task callbacks on main thread
+}
+
+// Shutdown
 SimpleAsync::Destroy();
 ```
 
 ---
 
-## 🧪 Included Demo: Parallel Image Blur
+## Profiler Demo
 
-This repo includes a full multithreaded image blur demo using `SimpleAsync`.
-
-### How it works:
-
-- Loads an image (`stb_image`)
-- Splits it into tiles
-- Applies blur to each tile **in parallel**
-- Recombines and saves the final result (`stb_image_write`)
-- Build and launch the program with an arg, the path to the image
-
-### Toggle async vs single-threaded:
-
-```cpp
-#define USE_ASYNC  // Comment this out to run in single-threaded mode
-```
-
-### Example output:
-
-```bash
-$ ./blur_demo input.png
-✓ Parallel processing completed! Image saved as output_blur_parallel.png
-```
+* Multiple pools with normal and low-priority sequential queues
+* Tasks can be canceled
+* All tasks are profiled for timing and thread usage using [ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler)
+* Outputs a JSON file compatible with Chrome tracing (`chrome://tracing`)
+* Dump the outputted JSON file in chrome://tracing/ to see the tasks timeline
 
 ---
 
-## 🛠️ Integration
+## Integration
 
-1. Drop `SimpleAsync.h` and `ThreadPool.h` into your project.
-2. Call `SimpleAsync::Initialize(numOfThreads)` once, during initialization.
-3. Call `SimpleAsync::CreateTask(...)` to launch tasks.
-4. Call `SimpleAsync::Update()` each frame or tick (main thread).
-5. Call `SimpleAsync::Cancel(id)` to request cancellation of a task. Task itself will need to deal with how to interrupt the running task.
-6. Call `Destroy()` on quit.
-
----
-
-## 🧱 Designed to Be Extended
-
-Future extensions could include:
-
-- ⏳ **Timeouts**: Automatically cancel tasks that exceed a time limit
-- 🔄 **Chained tasks**: `then()` style continuations
-- 📊 **Task prioritization**: High/medium/low priority queues
-- 📈 **Progress callbacks**: Report completion percentage during execution
-- 🔁 **Task groups / batch operations**: Wait for multiple tasks to complete
-- 🧵 **Flexible callback threading**: Option to invoke callbacks on any thread (worker thread, dedicated callback thread, or custom thread) instead of requiring main thread sync
-
-Pull requests are welcome!
+1. Include `SimpleAsync.h`, `ThreadPool.h`, and integrate [ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler) if profiling is needed
+2. Initialize with `SimpleAsync::Initialize(...)`
+3. Schedule tasks with `CreateTask(...)` or `CreateTaskInPool(...)`
+4. Call `SimpleAsync::Update()` each frame
+5. Cancel tasks with `Cancel(id)` if needed
+6. Shutdown with `Destroy()`
 
 ---
 
-## 📜 License
+## License
 
 MIT License.
-
-Includes:
-
-- [stb_image.h](https://github.com/nothings/stb)
-- [stb_image_write.h](https://github.com/nothings/stb)
-
-These are public domain or MIT licensed.
-
----
