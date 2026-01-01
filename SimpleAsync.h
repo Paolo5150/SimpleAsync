@@ -26,6 +26,12 @@ struct CancellationState
 
 using CancellationToken = std::shared_ptr<CancellationState>;
 
+struct TaskTimeout
+{
+	float TimeoutMs;
+	std::chrono::steady_clock::time_point StartedTime;
+};
+
 template<class T>
 class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper {
 public:
@@ -101,9 +107,12 @@ public:
 		if(pool == m_threadPools.end())
 			throw std::runtime_error("Thread pool does not exist");
 
+		auto token = std::make_shared<CancellationState>();
+		using ReturnType = decltype(task(token, std::forward<Args>(args)...));
+
+		static_assert(std::is_invocable_r_v<void, Callback, ReturnType>, "Callback must have one argument of the same type as the returned type of the task");
 		uint32_t id = m_id++;
 
-		auto token = std::make_shared<CancellationState>();
 
 		auto boundTask = [t = std::forward<Func>(task), token, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable -> decltype(auto)
 			{
@@ -116,7 +125,6 @@ public:
 
 		auto future = pool->second->EnqueueTask(std::move(boundTask));
 
-		using ReturnType = decltype(task(token, std::forward<Args>(args)...));
 
 		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(
 			id, std::move(future), std::forward<Callback>(callback));
@@ -127,6 +135,26 @@ public:
 		return id;
 	}
 
+	template<typename Func, typename Callback, typename Timeout, typename... Args>
+	static uint32_t CreateTaskTimeout(const std::string& poolName, float timeoutMilliseconds, Func&& task, Callback&& callback, Timeout&& timeoutfn, Args&&... args)
+	{
+		static_assert(std::is_invocable_r_v<void, Timeout, uint32_t>,"Timeout callback must be callable as void(uint32_t)");
+
+		uint32_t id =  CreateTaskInPool(
+			m_defaultPoolName,
+			std::forward<Func>(task),
+			std::forward<Callback>(callback),
+			std::forward<Args>(args)...);
+
+		m_timeoutCallbacks[id] = std::forward<Timeout>(timeoutfn);
+
+		TaskTimeout tt;
+		tt.StartedTime = std::chrono::steady_clock::now();
+		tt.TimeoutMs = timeoutMilliseconds;
+		m_timepoints[id] = tt;
+
+		return id;
+	}
 
 	static void ForceWait(uint32_t id)
 	{
@@ -141,6 +169,33 @@ public:
 
 	static void Update()
 	{
+		//Timeouts
+		for (auto it = m_timepoints.begin(); it != m_timepoints.end(); )
+		{
+			auto& k = it->first;
+			auto& v = it->second;
+
+			auto now = std::chrono::steady_clock::now();
+			auto diffMs =
+				std::chrono::duration<float, std::milli>(now - v.StartedTime).count();
+
+			if (diffMs >= v.TimeoutMs)
+			{
+				if (auto cb = m_timeoutCallbacks.find(k);
+					cb != m_timeoutCallbacks.end())
+				{
+					cb->second(k);
+					m_timeoutCallbacks.erase(cb);
+				}
+
+				it = m_timepoints.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		for (auto it = m_tasks.begin(); it != m_tasks.end(); )
 		{
@@ -204,6 +259,8 @@ public:
 private:
 	inline static std::unordered_map<uint32_t, std::unique_ptr<AsyncTaskWrapper>> m_tasks;
 	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
+	inline static std::unordered_map<uint32_t, TaskTimeout> m_timepoints;
+	inline static std::unordered_map<uint32_t, std::function<void(uint32_t)>> m_timeoutCallbacks;
 	inline static std::mutex m_tasksMutex;
 	inline static uint32_t m_id = 0;
 	inline static std::unordered_map<std::string, std::unique_ptr<ThreadPool>> m_threadPools;

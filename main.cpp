@@ -41,6 +41,34 @@ int main(int argc, char* argv[])
         // Add low priority task to the low priority queue
         SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
         SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
+
+        auto timeoutTask = [](CancellationToken token, int durationMs) -> int
+            {
+                PROFILE_SCOPE("Low task");
+                std::cout << "[Task] Started on thread: " << std::this_thread::get_id() << std::endl;
+                for (int i = 0; i < durationMs; i++)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    if (token->Canceled)
+                    {
+                        std::cout << "[Task] CANCELED work" << std::endl;
+                        return -1;
+                    }
+                }
+                std::cout << "[Task] Finished work" << std::endl;
+                return 0;
+            };
+
+        auto timeoutCb = [](uint32_t id)
+            {
+                PROFILE_SCOPE("Timeout");
+                std::cout << "Timeout reached!!!!!\n";
+                SimpleAsync::Cancel(id);
+            };
+
+        //Timeout
+        SimpleAsync::CreateTaskTimeout("DefaultPool", 1000, timeoutTask, lowPriorityCallback, timeoutCb, 500);
 
         auto normalTask = [](CancellationToken token, int iterationsX, int iterationsY) -> int{
 
