@@ -96,11 +96,11 @@ auto timeoutHandler = [](uint32_t taskId) {
 // The handler can then decide whether to cancel the task or take other actions
 uint32_t taskId = SimpleAsync::CreateTaskTimeout(
     "DefaultPool",  // Pool name
-    1000,           // Task duration parameter
+    1000,           // Timeouts in ms
     timeoutTask,    // Task function
     taskCallback,   // Completion callback
     timeoutHandler, // Timeout handler
-    500             // Timeout in milliseconds
+    500             // Task args...
 );
 ```
 
