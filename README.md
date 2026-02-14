@@ -12,7 +12,7 @@ Ideal for game engines, simulations, and any system requiring background work to
 * 🧵 Multiple named thread pools
 * 🧠 Callbacks run on the main thread
 * ❌ Cooperative cancellation
-* ⏱️ Task timeouts with automatic cancellation
+* ⏱️ Task timeouts
 * 🧱 Sequential queues via single-thread pools
 * 📊 Demo with Built-in profiler support using [ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler) (Chrome tracing compatible)
 

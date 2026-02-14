@@ -226,7 +226,7 @@ public:
 		if(it != m_threadPools.end())
 			throw std::runtime_error("Pool name already exists");
 
-		m_threadPools[poolName] = std::make_unique<ThreadPool>(threadsCount);
+		m_threadPools[poolName] = std::make_unique<ThreadPool>(threadsCount, poolName);
 	}
 
 	static void Initialize(const std::string& defaultPoolName = DefaultPoolName, size_t maxThreads = std::thread::hardware_concurrency())
@@ -236,7 +236,7 @@ public:
 			poolName = DefaultPoolName;
 
 		m_defaultPoolName = poolName;
-		m_threadPools[m_defaultPoolName] = std::make_unique<ThreadPool>(maxThreads);
+		m_threadPools[m_defaultPoolName] = std::make_unique<ThreadPool>(maxThreads, defaultPoolName);
 		m_initialized = true;
 	}
 
@@ -257,6 +257,10 @@ public:
 	}
 
 private:
+
+
+
+
 	inline static std::unordered_map<uint32_t, std::unique_ptr<AsyncTaskWrapper>> m_tasks;
 	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
 	inline static std::unordered_map<uint32_t, TaskTimeout> m_timepoints;
