@@ -121,8 +121,30 @@ public:
 			std::forward<Args>(args)...);
 	}
 
+	template<typename Func, typename... Args>
+	static uint32_t CreateTask(Func&& task, AsyncOptions opt, Args&&... args)
+	{
+		return CreateTaskInPool(
+			m_defaultPoolName,
+			std::forward<Func>(task),
+			[](auto&&) {},
+			opt,
+			std::forward<Args>(args)...);
+	}
+
+	template<typename Func, typename... Args>
+	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, AsyncOptions opt, Args&&... args)
+	{
+		return CreateTaskInPool(
+			poolName,
+			std::forward<Func>(task),
+			[](auto&&) {},
+			opt,
+			std::forward<Args>(args)...);
+	}
+
 	template<typename Func, typename Callback, typename... Args>
-	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Callback&& resultCB, AsyncOptions opt, Args&&... args)
+	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Callback resultCB, AsyncOptions opt, Args&&... args)
 	{
 		if (!m_initialized)
 		{
@@ -176,7 +198,8 @@ public:
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		auto it = m_tasks.find(id);
-		if (it != m_tasks.end()) {
+		if (it != m_tasks.end()) 
+		{
 			it->second->ForceWait();
 			m_tasks.erase(it);
 			m_cancellations.erase(id);
@@ -237,7 +260,8 @@ public:
 
 				it = m_tasks.erase(it);
 			}
-			else {
+			else 
+			{
 				++it;
 			}
 		}
