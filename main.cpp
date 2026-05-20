@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
         SimpleAsync::CreatePool("LowPriorityQueue", 1);
 
         // === Low Priority Sequential Tasks ===
-        auto lowPriorityTask = [](CancellationToken token, int durationMs) -> int
+        auto lowPriorityTask = [](CancellationToken token, Progress prog, int durationMs) -> int
             {
                 PROFILE_SCOPE("Low priority task");
                 std::cout << "[Low Priority Task] Started on thread: " << std::this_thread::get_id() << std::endl;
@@ -43,31 +43,35 @@ int main(int argc, char* argv[])
             };
 
         // Queue three sequential low priority tasks
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
 
         // === Timeout Task ===
-        auto timeoutTask = [](CancellationToken token, int durationMs) -> int
+        auto timeoutTask = [](CancellationToken token, Progress prog, int durationMs) -> int
             {
+                auto started = std::chrono::steady_clock::now();
+
                 PROFILE_SCOPE("Timeout task");
                 std::cout << "[Timeout Task] Started on thread: " << std::this_thread::get_id() << std::endl;
 
                 for (int i = 0; i < durationMs; i++)
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     if (token->Canceled)
                     {
-                        std::cout << "[Timeout Task] CANCELED after " << i << "ms" << std::endl;
+                        auto now = std::chrono::steady_clock::now();
+                        auto diff = std::chrono::duration<float, std::milli>(now - started).count();
+                        std::cout << "[Timeout Task] CANCELED after " << diff << "ms" << std::endl;
                         return -1;
                     }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(25));
                 }
 
                 std::cout << "[Timeout Task] Finished" << std::endl;
                 return 0;
             };
 
-        auto timeoutCallback = [](int result)
+        auto resultCallback = [](int result)
             {
                 PROFILE_SCOPE("Timeout callback");
                 std::cout << "[Timeout Callback] Result: " << result << " on thread: " << std::this_thread::get_id() << std::endl;
@@ -81,10 +85,13 @@ int main(int argc, char* argv[])
             };
 
         // Create task with 500ms timeout (task attempts to run for 1000ms)
-        SimpleAsync::CreateTaskTimeout("DefaultPool", 1000, timeoutTask, timeoutCallback, timeoutHandler, 500);
+        AsyncOptions opt;
+        opt.TimeoutMilliseconds = 500;
+        opt.TimeoutCallback = timeoutHandler;
+        SimpleAsync::CreateTaskInPool("DefaultPool", timeoutTask, resultCallback, opt, 1000);
 
         // === Normal Computation Task ===
-        auto normalTask = [](CancellationToken token, int iterationsX, int iterationsY) -> int
+        auto normalTask = [](CancellationToken token, Progress prog, int iterationsX, int iterationsY) -> int
             {
                 PROFILE_SCOPE("Normal computation task");
                 std::cout << "[Normal Task] Started on thread: " << std::this_thread::get_id() << std::endl;
@@ -111,7 +118,7 @@ int main(int argc, char* argv[])
             };
 
         // === Cancelable Task ===
-        auto cancelableTask = [](CancellationToken token, int iterationsX, int iterationsY) -> int
+        auto cancelableTask = [](CancellationToken token, Progress prog, int iterationsX, int iterationsY) -> int
             {
                 PROFILE_SCOPE("Cancelable task");
                 std::cout << "[Cancelable Task] Started on thread: " << std::this_thread::get_id() << std::endl;
@@ -144,34 +151,58 @@ int main(int argc, char* argv[])
                 std::cout << "[Cancelable Callback] Finished on thread: " << std::this_thread::get_id() << std::endl;
             };
 
-        // Create tasks
-        SimpleAsync::CreateTask(normalTask, normalCallback, 50000, 50000);
-        auto cancelTaskID = SimpleAsync::CreateTask(cancelableTask, cancelableCallback, 100, 100);
+        SimpleAsync::CreateTask(normalTask, normalCallback, {}, 50000, 50000);
+        auto cancelTaskID = SimpleAsync::CreateTask(cancelableTask, cancelableCallback, {},100, 100);
+
+        bool loopRunning = true;
+
+        // ---- Task with progress to exit loop
+        auto taskKillLoop = [](CancellationToken token, Progress prog) {
+            for (int i = 1; i <= 10; i++)
+            {
+                prog->Value = i / 10.0f;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            }
+            return 0;
+            };
+
+        auto killLoopCB = [&](int a) {
+            std::cout << "Progress to exit loop: complete! Bye!\n";
+            loopRunning = false;
+            };
+        AsyncOptions opt2;
+        opt2.ProgressCallback = [](float p) {
+            static float previous = 0;
+            if (p > previous)
+            {
+                previous = p;
+                std::cout << "[Progress Callback] Progress until exit loop: " << p << " on thread: " << std::this_thread::get_id() << std::endl;
+            }
+            };
+
+        SimpleAsync::CreateTask(taskKillLoop, killLoopCB, opt2);
+
 
         // === Main Loop ===
         std::cout << "\n=== Starting main loop ===" << std::endl;
         int frames = 0;
 
-        while (true)
+        while (loopRunning)
         {
             SimpleAsync::Update();
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
 
             frames++;
 
             // Cancel the cancelable task at frame 50
             if (frames == 50)
             {
-                std::cout << "\n[Main Loop] Frame " << frames << ": Canceling task " << cancelTaskID << std::endl;
-                SimpleAsync::Cancel(cancelTaskID);
+                //std::cout << "\n[Main Loop] Frame " << frames << ": Canceling task " << cancelTaskID << std::endl;
+                //SimpleAsync::Cancel(cancelTaskID);
             }
 
-            // Exit after 200 frames
-            if (frames >= 200)
-            {
-                std::cout << "\n[Main Loop] Frame " << frames << ": Exiting" << std::endl;
-                break;
-            }
+    
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+
         }
     }
 
