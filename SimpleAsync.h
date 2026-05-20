@@ -141,7 +141,7 @@ public:
 		static_assert(std::is_invocable_r_v<void, Timeout, uint32_t>,"Timeout callback must be callable as void(uint32_t)");
 
 		uint32_t id =  CreateTaskInPool(
-			m_defaultPoolName,
+			poolName,
 			std::forward<Func>(task),
 			std::forward<Callback>(callback),
 			std::forward<Args>(args)...);
