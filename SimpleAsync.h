@@ -66,7 +66,7 @@ public:
 				try {
 					if (!CallbackInvoked) {
 						CallbackInvoked = true;
-						T&& result = Task.get();
+						T result = Task.get();
 						if (Callback) Callback(std::move(result));
 					}
 					return true;
