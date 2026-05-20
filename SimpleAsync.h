@@ -240,7 +240,7 @@ public:
 		m_initialized = true;
 	}
 
-	static uint32_t GetAvailableThreads(const std::string& poolName)
+	static uint32_t GetAvailableThreadsCount(const std::string& poolName)
 	{
 		auto it = m_threadPools.find(poolName);
 		if (it == m_threadPools.end())
