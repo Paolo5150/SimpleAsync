@@ -257,10 +257,6 @@ public:
 	}
 
 private:
-
-
-
-
 	inline static std::unordered_map<uint32_t, std::unique_ptr<AsyncTaskWrapper>> m_tasks;
 	inline static std::unordered_map<uint32_t, CancellationToken> m_cancellations;
 	inline static std::unordered_map<uint32_t, TaskTimeout> m_timepoints;
