@@ -7,11 +7,13 @@
 #include <chrono>
 #include "ThreadPool.h"
 
-namespace {
+namespace 
+{
 	const std::string DefaultPoolName = "DefaultPool";
 }
 
-class AsyncTaskWrapper {
+class AsyncTaskWrapper 
+{
 public:
 	virtual ~AsyncTaskWrapper() = default;
 	virtual bool CheckAndExecuteCallback() = 0;
@@ -33,7 +35,8 @@ struct TaskTimeout
 };
 
 template<class T>
-class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper {
+class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper 
+{
 public:
 	uint32_t ID;
 	std::future<T> Task;
@@ -46,32 +49,40 @@ public:
 	uint32_t GetId() const override { return ID; }
 
 	void ForceWait() override {
-		if (Task.valid() && !CallbackInvoked) {
-			try {
+		if (Task.valid() && !CallbackInvoked) 
+		{
+			try 
+			{
 				Task.wait();
 				T&& result = Task.get();
 				if (Callback) Callback(std::move(result));
 			}
-			catch (...) {
-				// Optionally log error
+			catch (...) 
+			{
 				// std::cerr << "AsyncTask Error: " << e.what() << std::endl;
 			}
 			CallbackInvoked = true;
 		}
 	}
 
-	bool CheckAndExecuteCallback() override {
-		if (Task.valid()) {
-			if (Task.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-				try {
-					if (!CallbackInvoked) {
+	bool CheckAndExecuteCallback() override 
+	{
+		if (Task.valid()) 
+		{
+			if (Task.wait_for(std::chrono::seconds(0)) == std::future_status::ready) 
+			{
+				try 
+				{
+					if (!CallbackInvoked) 
+					{
 						CallbackInvoked = true;
 						T result = Task.get();
 						if (Callback) Callback(std::move(result));
 					}
 					return true;
 				}
-				catch (...) {
+				catch (...) 
+				{
 					// std::cerr << "AsyncTask Exception: " << e.what() << std::endl;
 					return true;
 				}
@@ -124,7 +135,6 @@ public:
 			};
 
 		auto future = pool->second->EnqueueTask(std::move(boundTask));
-
 
 		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(
 			id, std::move(future), std::forward<Callback>(callback));
