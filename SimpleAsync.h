@@ -67,7 +67,7 @@ public:
 			try 
 			{
 				Task.wait();
-				T&& result = Task.get();
+				T result = Task.get();
 				if (Callback) Callback(std::move(result));
 			}
 			catch (...) 
