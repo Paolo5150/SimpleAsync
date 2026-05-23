@@ -6,13 +6,15 @@
 #include <functional>
 #include <chrono>
 #include "ThreadPool.h"
+#include <concepts>
+#include <functional>
 
-namespace 
+namespace
 {
 	const std::string DefaultPoolName = "DefaultPool";
 }
 
-class AsyncTaskWrapper 
+class AsyncTaskWrapper
 {
 public:
 	virtual ~AsyncTaskWrapper() = default;
@@ -35,7 +37,7 @@ struct CancellationState
 
 struct ProgressValue
 {
-	std::atomic<float> Value{0};
+	std::atomic<float> Value{ 0 };
 };
 
 using CancellationToken = std::shared_ptr<CancellationState>;
@@ -47,8 +49,18 @@ struct TaskTimeout
 	std::chrono::steady_clock::time_point StartedTime;
 };
 
+struct TaskContext
+{
+	CancellationToken Token;
+	Progress Prog;
+};
+
+template<typename C, typename R>
+concept CallbackFor =
+std::invocable<C, R>;
+
 template<class T>
-class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper 
+class ConcreteAsyncTaskWrapper : public AsyncTaskWrapper
 {
 public:
 	uint32_t ID;
@@ -57,20 +69,29 @@ public:
 	bool CallbackInvoked = false;
 
 	ConcreteAsyncTaskWrapper(uint32_t id, std::future<T>&& task, std::function<void(T)> callback = {})
-		: ID(id), Task(std::move(task)), Callback(std::move(callback)) {}
+		: ID(id), Task(std::move(task)), Callback(std::move(callback)) {
+	}
 
 	uint32_t GetId() const override { return ID; }
 
 	void ForceWait() override {
-		if (Task.valid() && !CallbackInvoked) 
+		if (Task.valid() && !CallbackInvoked)
 		{
-			try 
+			try
 			{
 				Task.wait();
-				T result = Task.get();
-				if (Callback) Callback(std::move(result));
+				if constexpr (std::is_void_v<T>)
+				{
+					Task.get(); // just wait, no result
+					if (Callback) Callback();
+				}
+				else
+				{
+					T result = Task.get();
+					if (Callback) Callback(std::move(result));
+				}
 			}
-			catch (...) 
+			catch (...)
 			{
 				// std::cerr << "AsyncTask Error: " << e.what() << std::endl;
 			}
@@ -78,23 +99,32 @@ public:
 		}
 	}
 
-	bool CheckAndExecuteCallback() override 
+	bool CheckAndExecuteCallback() override
 	{
-		if (Task.valid()) 
+		if (Task.valid())
 		{
-			if (Task.wait_for(std::chrono::seconds(0)) == std::future_status::ready) 
+			if (Task.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 			{
-				try 
+				try
 				{
-					if (!CallbackInvoked) 
+					if (!CallbackInvoked)
 					{
 						CallbackInvoked = true;
-						T result = Task.get();
-						if (Callback) Callback(std::move(result));
+
+						if constexpr (std::is_void_v<T>)
+						{
+							Task.get(); // just wait, no result
+							if (Callback) Callback();
+						}
+						else
+						{
+							T result = Task.get();
+							if (Callback) Callback(std::move(result));
+						}
 					}
 					return true;
 				}
-				catch (...) 
+				catch (...)
 				{
 					// std::cerr << "AsyncTask Exception: " << e.what() << std::endl;
 					return true;
@@ -109,9 +139,33 @@ public:
 class SimpleAsync
 {
 public:
-	
+
+	template<typename Func, typename... Args>
+	static uint32_t CreateTask(Func&& task, Args&&... args)
+	{
+		return CreateTaskInPool(
+			m_defaultPoolName,
+			std::forward<Func>(task),
+			nullptr,
+			{},
+			std::forward<Args>(args)...);
+	}
+
 	template<typename Func, typename Callback, typename... Args>
-	static uint32_t CreateTask(Func&& task,	Callback&& callback, AsyncOptions opt , Args&&... args)
+	requires CallbackFor<Callback, std::invoke_result_t<Func, TaskContext, Args...>> 
+	static uint32_t CreateTask(Func&& task, Callback&& callback, Args&&... args)
+	{
+		return CreateTaskInPool(
+			m_defaultPoolName,
+			std::forward<Func>(task),
+			std::forward<Callback>(callback),
+			{},
+			std::forward<Args>(args)...);
+	}
+
+	template<typename Func, typename Callback, typename... Args>
+	requires CallbackFor<Callback, std::invoke_result_t<Func, TaskContext, Args...>>
+	static uint32_t CreateTask(Func&& task, Callback&& callback, AsyncOptions opt, Args&&... args)
 	{
 		return CreateTaskInPool(
 			m_defaultPoolName,
@@ -127,7 +181,7 @@ public:
 		return CreateTaskInPool(
 			m_defaultPoolName,
 			std::forward<Func>(task),
-			[](auto&&) {},
+			nullptr,
 			opt,
 			std::forward<Args>(args)...);
 	}
@@ -143,7 +197,20 @@ public:
 			std::forward<Args>(args)...);
 	}
 
+	template<typename Func, typename... Args>
+	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Args&&... args)
+	{
+		return CreateTaskInPool(poolName, std::forward<Func>(task), nullptr, {}, std::forward<Args>(args)...);
+	}
+
 	template<typename Func, typename Callback, typename... Args>
+	requires CallbackFor<Callback, std::invoke_result_t<Func, TaskContext, Args...>>
+	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Callback&& callback, Args&&... args)
+	{
+		return CreateTaskInPool(poolName, std::forward<Func>(task), std::forward<Callback>(callback), {}, std::forward<Args>(args)...);
+	}
+
+	template<typename Func, typename Callback = std::nullptr_t, typename... Args>
 	static uint32_t CreateTaskInPool(const std::string& poolName, Func&& task, Callback resultCB, AsyncOptions opt, Args&&... args)
 	{
 		if (!m_initialized)
@@ -156,15 +223,24 @@ public:
 
 		auto token = std::make_shared<CancellationState>();
 		auto prog = std::make_shared<ProgressValue>();
-		using ReturnType = decltype(task(token, prog, std::forward<Args>(args)...));
 
-		static_assert(std::is_invocable_r_v<void, Callback, ReturnType>, "Callback must have one argument of the same type as the returned type of the task");
+		TaskContext tx;
+		tx.Token = token;
+		tx.Prog = prog;
+
+		using ReturnType = decltype(task(tx, std::forward<Args>(args)...));
+
+		if constexpr (!std::is_same_v<Callback, std::nullptr_t>)
+		{
+			static_assert(std::is_invocable_r_v<void, Callback, ReturnType>, "Callback must have one argument of the same type as the returned type of the task");
+		}
+
 		uint32_t id = m_id++;
 
-		auto boundTask = [t = std::forward<Func>(task), token, prog, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable -> decltype(auto)
+		auto boundTask = [t = std::forward<Func>(task), tx, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable -> decltype(auto)
 			{
 				auto callWithArgs = [&](auto&&... unpackedArgs) -> decltype(auto) {
-					return t(token, prog, std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+					return t(tx, std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
 					};
 
 				return std::apply(callWithArgs, std::move(argsTuple));
@@ -186,7 +262,12 @@ public:
 			m_timepoints[id] = tt;
 		}
 
-		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(id, std::move(future), std::forward<Callback>(resultCB));
+		std::function<void(ReturnType)> cb;
+		if constexpr (!std::is_same_v<Callback, std::nullptr_t>)
+		{
+			cb = std::forward<Callback>(resultCB);
+		}
+		auto asyncTask = std::make_unique<ConcreteAsyncTaskWrapper<ReturnType>>(id, std::move(future), std::move(cb));
 
 		m_tasks[id] = std::move(asyncTask);
 		m_cancellations[id] = token;
@@ -198,7 +279,7 @@ public:
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		auto it = m_tasks.find(id);
-		if (it != m_tasks.end()) 
+		if (it != m_tasks.end())
 		{
 			it->second->ForceWait();
 			m_tasks.erase(it);
@@ -244,7 +325,7 @@ public:
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		for (auto it = m_tasks.begin(); it != m_tasks.end(); )
 		{
-			if (it->second->CheckAndExecuteCallback()) 
+			if (it->second->CheckAndExecuteCallback())
 			{
 				if (auto tout = m_timeoutCallbacks.find(it->first); tout != m_timeoutCallbacks.end())
 				{
@@ -260,7 +341,7 @@ public:
 
 				it = m_tasks.erase(it);
 			}
-			else 
+			else
 			{
 				++it;
 			}
@@ -282,7 +363,7 @@ public:
 			throw std::runtime_error("Pool name cannot be empty");
 
 		auto it = m_threadPools.find(poolName);
-		if(it != m_threadPools.end())
+		if (it != m_threadPools.end())
 			throw std::runtime_error("Pool name already exists");
 
 		m_threadPools[poolName] = std::make_unique<ThreadPool>(threadsCount, poolName);
