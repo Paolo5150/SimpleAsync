@@ -23,7 +23,7 @@ Designed for game engines, simulations, rendering systems, tools, and applicatio
 
 # Requirements
 
-* C++17 or higher
+* C++20 or higher
 
 ---
 
@@ -40,7 +40,7 @@ int main()
     // Optional additional pool
     SimpleAsync::CreatePool("LowPriorityQueue", 1);
 
-    auto task = [](CancellationToken token, Progress prog, int x, int y) -> int
+    auto task = [](TaskContext ctx, int x, int y) -> int
     {
         int result = 0;
 
@@ -49,7 +49,7 @@ int main()
             for (int j = 0; j < y; ++j)
             {
                 // Cooperative cancellation
-                if (token->Canceled)
+                if (ctx.Token->Canceled)
                     return -1;
 
                 result += i + j;
@@ -65,13 +65,7 @@ int main()
         std::cout << "Task result: " << result << std::endl;
     };
 
-    // Execute on default pool
-    uint32_t taskId = SimpleAsync::CreateTask(
-        task,
-        callback,
-        {},
-        100,
-        100);
+    uint32_t taskId = SimpleAsync::CreateTask(task, callback, 100, 100);
 
     bool running = true;
 
@@ -87,22 +81,34 @@ int main()
 
 ---
 
-# Optional Callbacks
+# Task Signature
 
-Callbacks are optional.
+Every task receives a `TaskContext` as its first argument, followed by any additional parameters you pass to `CreateTask`. The context provides access to cancellation and progress reporting.
 
 ```cpp
-auto task = [](CancellationToken token, Progress prog, int ms) -> int
+auto task = [](TaskContext ctx, /* your args */) -> ReturnType
+{
+    // ctx.Token  — cooperative cancellation
+    // ctx.Prog   — progress reporting
+};
+```
+
+---
+
+# Optional Callbacks
+
+Callbacks are optional. Omit them for fire-and-forget tasks.
+
+```cpp
+auto task = [](TaskContext ctx, int ms) -> int
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
     return 42;
 };
 
-// No callback supplied
-SimpleAsync::CreateTask(task, {}, 1000);
+// No callback
+SimpleAsync::CreateTask(task, 1000);
 ```
-
-This is useful for fire-and-forget tasks.
 
 ---
 
@@ -123,16 +129,12 @@ SimpleAsync::CreatePool("StreamingPool", 2);
 Schedule tasks onto a specific pool:
 
 ```cpp
-SimpleAsync::CreateTaskInPool(
-    "LowPriorityQueue",
-    task,
-    callback,
-    {},
-    100,
-    100);
+SimpleAsync::CreateTaskInPool("LowPriorityQueue", task, callback, 100, 100);
 ```
 
 Single-thread pools naturally behave like sequential queues.
+
+`CreateTaskInPool` supports the same overloads as `CreateTask` — with or without a callback, and with or without `AsyncOptions`.
 
 ---
 
@@ -141,11 +143,11 @@ Single-thread pools naturally behave like sequential queues.
 SimpleAsync uses cooperative cancellation.
 
 ```cpp
-auto task = [](CancellationToken token, Progress prog) -> int
+auto task = [](TaskContext ctx) -> int
 {
     while (true)
     {
-        if (token->Canceled)
+        if (ctx.Token->Canceled)
         {
             std::cout << "Task canceled" << std::endl;
             return -1;
@@ -155,26 +157,26 @@ auto task = [](CancellationToken token, Progress prog) -> int
     }
 };
 
-uint32_t id = SimpleAsync::CreateTask(task, {}, {});
+uint32_t id = SimpleAsync::CreateTask(task);
 
 // Later...
 SimpleAsync::Cancel(id);
 ```
 
-Tasks must periodically check `token->Canceled`.
+Tasks must periodically check `ctx.Token->Canceled`.
 
 ---
 
 # Progress Reporting
 
-Tasks can report progress back to the main thread.
+Tasks can report progress back to the main thread via `ctx.Prog`.
 
 ```cpp
-auto task = [](CancellationToken token, Progress prog)
+auto task = [](TaskContext ctx)
 {
     for (int i = 0; i <= 10; i++)
     {
-        prog->Value = i / 10.0f;
+        ctx.Prog->Value = i / 10.0f;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
@@ -187,7 +189,7 @@ opt.ProgressCallback = [](float progress)
     std::cout << "Progress: " << progress * 100.0f << "%" << std::endl;
 };
 
-SimpleAsync::CreateTask(task, {}, opt);
+SimpleAsync::CreateTask(task, opt);
 ```
 
 Progress callbacks execute on the main thread during `Update()`.
@@ -196,19 +198,15 @@ Progress callbacks execute on the main thread during `Update()`.
 
 # Task Timeouts
 
-SimpleAsync supports timeout monitoring through `AsyncOptions`.
-
-Timeout handlers execute on the main thread and can decide how to respond.
+SimpleAsync supports timeout monitoring through `AsyncOptions`. Timeout handlers execute on the main thread and can decide how to respond, such as canceling the task.
 
 ```cpp
-auto timeoutTask = [](CancellationToken token, Progress prog, int durationMs) -> int
+auto timeoutTask = [](TaskContext ctx, int durationMs) -> int
 {
     for (int i = 0; i < durationMs; i++)
     {
-        if (token->Canceled)
-        {
+        if (ctx.Token->Canceled)
             return -1;
-        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -233,11 +231,7 @@ AsyncOptions opt;
 opt.TimeoutMilliseconds = 500;
 opt.TimeoutCallback = timeoutHandler;
 
-SimpleAsync::CreateTask(
-    timeoutTask,
-    resultCallback,
-    opt,
-    1000);
+SimpleAsync::CreateTask(timeoutTask, resultCallback, opt, 1000);
 ```
 
 ---
@@ -247,18 +241,18 @@ SimpleAsync::CreateTask(
 You can block until a task completes.
 
 ```cpp
-uint32_t taskId = SimpleAsync::CreateTask(task, callback, {}, 100);
+uint32_t taskId = SimpleAsync::CreateTask(task, callback, 100);
 
 SimpleAsync::ForceWait(taskId);
 ```
 
-This waits for completion and immediately executes the callback.
+This waits for completion and immediately executes the callback on the calling thread.
 
 ---
 
 # Main Loop Integration
 
-`SimpleAsync::Update()` should typically be called once per frame or tick.
+`SimpleAsync::Update()` should be called once per frame or tick.
 
 ```cpp
 while (running)
@@ -310,7 +304,7 @@ The included demo showcases:
 
 The demo integrates with:
 
-[ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler?utm_source=chatgpt.com)
+[ChromeProfiler](https://github.com/Paolo5150/ChromeProfiler)
 
 Features include:
 
@@ -321,7 +315,7 @@ Features include:
 
 Open the generated trace file in:
 
-```text
+```
 chrome://tracing
 ```
 
@@ -331,10 +325,7 @@ to inspect task execution timelines.
 
 # Integration
 
-1. Include:
-
-   * `SimpleAsync.h`
-   * `ThreadPool.h`
+1. Include `SimpleAsync.h` and `ThreadPool.h`
 
 2. Initialize:
 
@@ -349,13 +340,11 @@ SimpleAsync::CreateTask(...);
 SimpleAsync::CreateTaskInPool(...);
 ```
 
-4. Call:
+4. Call every frame/tick:
 
 ```cpp
 SimpleAsync::Update();
 ```
-
-every frame/tick
 
 5. Shutdown:
 
@@ -368,9 +357,8 @@ SimpleAsync::Destroy();
 # Notes
 
 * Callbacks are never executed on worker threads
-* Tasks are not forcibly killed during cancellation
-* Cancellation is cooperative
-* `Update()` must be called regularly for callbacks/timeouts/progress updates
+* Tasks are not forcibly killed on cancellation — it is cooperative
+* `Update()` must be called regularly for callbacks, timeouts, and progress updates
 * Thread pools persist until `Destroy()`
 
 ---
