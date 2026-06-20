@@ -32,7 +32,7 @@ int main(int argc, char* argv[])
         SimpleAsync::CreatePool("LowPriorityQueue", 1);
 
         // === Simple task ===
-        auto simpleVoid = [&](TaskContext ctx, int mills) -> void
+        auto simpleVoid = [&](TaskContext ctx, int mills)
             {
                 PROFILE_SCOPE("Void task");
                 std::cout << "[Void] Started on thread: " << std::this_thread::get_id() << std::endl;
@@ -45,11 +45,6 @@ int main(int argc, char* argv[])
             };
 
         SimpleAsync::CreateTask(simpleVoid,  500);
-
-        auto task = [](TaskContext ctx, int x) -> int { return x; };
-
-        SimpleAsync::CreateTask(task, [](int r) {}, 500);
-
 
         // === No Callback task ===
         auto noCBTask = [&](TaskContext ctx, int durationMs) -> int
@@ -65,7 +60,7 @@ int main(int argc, char* argv[])
                 return 0;
             };
 
-        SimpleAsync::CreateTask(noCBTask, {}, 2000);
+        SimpleAsync::CreateTask(noCBTask, 2000);
 
         // === Low Priority Sequential Tasks ===
         auto lowPriorityTask = [](TaskContext ctx, int durationMs) -> int
@@ -92,9 +87,9 @@ int main(int argc, char* argv[])
                 lowPriorityExecuted = true;
             };
 
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
-        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, {}, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
+        SimpleAsync::CreateTaskInPool("LowPriorityQueue", lowPriorityTask, lowPriorityCallback, 1500);
 
         // === Timeout Task ===
         auto timeoutTask = [](TaskContext ctx, int durationMs) -> int
@@ -179,7 +174,7 @@ int main(int argc, char* argv[])
                 normalCallbackReceived = true;
             };
 
-        SimpleAsync::CreateTask(normalTask, normalCallback, {}, 50000, 50000);
+        SimpleAsync::CreateTask(normalTask, normalCallback, 50000, 50000);
 
         // === Cancelable Task ===
         auto cancelableTask = [&](TaskContext ctx, int iterationsX, int iterationsY) -> int
@@ -220,7 +215,7 @@ int main(int argc, char* argv[])
                 std::cout << "[Cancelable Callback] Finished on thread: " << std::this_thread::get_id() << std::endl;
             };
 
-        auto cancelID = SimpleAsync::CreateTask(cancelableTask, cancelableCallback, {}, 100, 100);
+        auto cancelID = SimpleAsync::CreateTask(cancelableTask, cancelableCallback, 100, 100);
 
         bool loopRunning = true;
 
