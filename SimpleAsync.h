@@ -236,17 +236,7 @@ public:
 		}
 
 		uint32_t id = m_id++;
-
-		auto boundTask = [t = std::forward<Func>(task), tx, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable -> decltype(auto)
-			{
-				auto callWithArgs = [&](auto&&... unpackedArgs) -> decltype(auto) {
-					return t(tx, std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
-					};
-
-				return std::apply(callWithArgs, std::move(argsTuple));
-			};
-
-		auto future = pool->second->EnqueueTask(std::move(boundTask));
+		auto future = pool->second->EnqueueTask(std::move(task), tx, std::forward<Args>(args)...);
 		if (opt.ProgressCallback)
 		{
 			m_progressCallbacks[id] = opt.ProgressCallback;
